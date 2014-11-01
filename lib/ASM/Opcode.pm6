@@ -1,4 +1,4 @@
-class Opcode {
+class ASM::Opcode {
     has $.mnemo;
     has $.hex;
     has $.arglength;

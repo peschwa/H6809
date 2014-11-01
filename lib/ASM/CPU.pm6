@@ -1,4 +1,6 @@
-class CPU {
+use ASM::Opcode;
+
+class ASM::CPU {
     has @.opcode-types;
-    has Opcode @.opcodes;
+    has ASM::Opcode @.opcodes;
 }
