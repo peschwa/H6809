@@ -1,5 +1,10 @@
 use ASM::H6809::CPU;
 
+class X::ASM::UnknownMnemonic is Exception {
+    has $.mnemo;
+    method message { "Unknown mnemonic {$.mnemo}." }
+}
+
 class ASM::H6809::Assembler # is ASM::Assembler
 {
     has ASM::H6809::CPU $.cpu;
@@ -19,17 +24,17 @@ class ASM::H6809::Assembler # is ASM::Assembler
     }
 
     method first-pass(Str $input) {
+
         my grammar ASMFirstPassGrammar {
             token TOP {
-                <label>?
                 [
-                    '.' <directive>
-                ||  <opcode>
-                ]+ %% "\n" +?
-            }
-
-            token label {
-                \w+ ':'
+                    [
+                        [ <label> ' '+ ]?
+                        '.' <directive>
+                    ||  [ <label> ':' ' '+ ]?
+                        <opcode>
+                    ]
+                ]+ %% \x0A +?
             }
 
             token directive {
@@ -37,18 +42,23 @@ class ASM::H6809::Assembler # is ASM::Assembler
             }
 
             token opcode {
-                $<name> = @*MNEMOS
                 [
-                    <?{ %*M2O{$<name>}.elems == 1
-                    && %*M2O{$<name>}[0].arglength == 0}>
+                    $<name> = @*MNEMOS
+                    [
+                        <?{ %*M2O{$<name>}.elems == 1
+                        && %*M2O{$<name>}[0].arglength == 0}>
+                    ||
+                        ' '+? <operand> 
+                        <?{ 
+                            $<operand><addr-reg> && %*M2O{$<name>}.grep(*.argtype eq 'X') 
+                        ||  $<operand><immediate-val> && %*M2O{$<name>}.grep(*.argtype eq 'I')
+                        ||  $<operand><address> && %*M2O{$<name>}.grep(*.argtype eq 'A')
+                        ||  $<operand><label> && %*M2O{$<name>}.grep(*.argtype eq 'O'|'A')
+                        }>
+                    ||  { die "Failed to parse {$<name>}. Argument missing or wrong type." }
+                    ]
                 ||
-                    <.ws>+? <operand> 
-                    <?{ 
-                        $<operand><addr-reg> && %*M2O{$<name>}.grep(*.argtype eq 'X') 
-                    ||  $<operand><immediate-val> && %*M2O{$<name>}.grep(*.argtype eq 'I')
-                    ||  $<operand><address> && %*M2O{$<name>}.grep(*.argtype eq 'A')
-                    }>
-                ||  { die "Failed to parse {$<name>}. Argument missing or wrong type." }
+                    $<name> = \w+ { X::ASM::UnknownMnemonic.new(:mnemo($<name>)).throw }
                 ]
             }
 
@@ -57,54 +67,73 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     <addr-reg> 
                 ||  <immediate-val>
                 ||  <address>
+                ||  <label>
                 ]
             }
 
             token addr-reg {
-                $<value> = '@X'
+                [ '@' 'X' ]
             }
 
             token immediate-val {
-                '#' $<value> = <.address>
+                '#' <.address>
             }
 
             token address {
-                $<value> = [
-                    '$' <[0..9A..F]>+
+                [
+                    '$' <[0..9A..Fa..f]>+
                 ||  <[0..9]>+
-                ||  \w+
                 ]
             }
+
+            token label {
+                \w+
+            }
+
         }
 
         my class ASMFirstPassAction {
             has $.position = 0;
-            has Int @.memory;
+            has @.memory;
             has %.labels;
 
             method TOP($/) {
                 my $label;
-                if $<label> {
-                    $label = make $<label>>>.ast;
-                    %!labels{$label} = $.position;
-                }
-                if $<directive> {
+                if $<directive> && $<label> ne any(@*MNEMOS) {
                     my $directive = make $<directive>>>.ast;
+                    $label = make $<label>>>.ast;
                     if $directive && $label {
-                        %.labels{$label} = $.position;
+                        %.labels{$label} //= $.position;
                     }
                 }
+
+                for @!memory <-> $cur {
+                    next unless $cur;
+                    for %.labels.pairs -> $pair {
+                        if $pair.key && $cur eq $pair.key {
+                            $cur = $pair.value;
+                            last;
+                        }
+                    }
+                }
+
+                @!memory = map { $_ ?? $_.Int !! 0 }, @!memory;
 
                 make @.memory;
             }
 
             method label($/) {
-                make $/.Str.trans(':' => '')
+                my $label = $/.Str.trans(':' => '');
+                if $label ne any(@*MNEMOS) {
+                    %!labels{$label} //= $.position;
+                    make $label
+                }
             }
 
             method directive($/) {
                 if $<name> eq 'ORG' {
                     $!position = $<arg>.trans('$' => '').Int;
+                    @!memory[$!position] = 0;
                     make '';
                 }
                 else {
@@ -113,22 +142,28 @@ class ASM::H6809::Assembler # is ASM::Assembler
             }
 
             method opcode($/) {
-                my $argtype = $<operand><add-reg> ?? 'X' !!
+                my $argtype = $<operand><addr-reg> ?? 'X' !!
                               $<operand><immediate-val> ?? 'I' !!
-                              $<operand><address> ?? 'A' !! ' ';
-                my $argval = $<operand><add-reg> //
+                              $<operand><address> ?? 'A' !! 
+                              $<operand><label> ?? any('O', 'A') !! ' ';
+                my $argval = $<operand><addr-reg> //
                              $<operand><immediate-val> //
-                             $<operand><address> // ' ';
+                             $<operand><address> // 
+                             $<operand><label> // ' ';
 
-                # argval is a string, we have to pay attention what base it's notated in
-                $argval = $argtype eq any('X', ' ') ?? $argval !! 
-                    $argval.substr(0, 1) eq '$' 
-                    ?? :16($argval.trans('$' => '')).comb(/../)>>.Int>>.base(10) 
-                    !! sprintf("%04x", $argval).comb(/../);
-
-                # still missing offset calculation
                 my $opcode = %*M2O{$<name>}.grep(*.argtype eq $argtype)[0];
 
+                if $argtype ne 'O' {
+                    # remove indicator for imidiate values, we already know from the opcode
+                    $argval .= trans('#' => '');
+
+		    my $fmt = "%0" ~ ($opcode.arglength * 2) ~ "x";
+                    # argval is a string, we have to pay attention what base it's notated in
+                    $argval = $argtype eq any('X', ' ') ?? $argval !! 
+                        $argval.substr(0, 1) eq '$' 
+                        ?? $argval.trans('$' => '').comb(/../).map({ :16( $^a ) })>>.Int
+                        !! sprintf($fmt, $argval).comb(/../).map({ :16( $^a ) })>>.Int;
+                }
                 @.memory[$!position] = $opcode.hex;
                 $!position++;
 
@@ -138,7 +173,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     ).flat;
 
                 for @next -> $elem {
-                    @.memory[$.position] = $elem.Int;
+                    @.memory[$.position] = ~$elem;
                     $!position++;
                 }
             }
@@ -147,7 +182,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
         my %*M2O = %!mnemo-to-opcode;
         my @*MNEMOS = @!mnemos;
 
-        map { $_ ?? $_.Int !! 0 }, ASMFirstPassGrammar.parse($input, :actions(ASMFirstPassAction.new)).ast;
+        ASMFirstPassGrammar.parse($input, :actions(ASMFirstPassAction.new)).ast;
     }
 
     method second-pass(Str $input) {
@@ -158,3 +193,4 @@ class ASM::H6809::Assembler # is ASM::Assembler
         self.second-pass(self.first-pass($input))
     }
 }
+
