@@ -5,6 +5,11 @@ class X::ASM::UnknownMnemonic is Exception {
     method message { "Unknown mnemonic {$.mnemo}." }
 }
 
+class X::ASM::MissingOrMistypedArgument is Exception {
+    has $.mnemo;
+    method message { "Failed to parse " ~ $.mnemo ~ ". Argument missing or of the wrong type." }
+}
+
 class ASM::H6809::Assembler # is ASM::Assembler
 {
     has ASM::H6809::CPU $.cpu;
@@ -55,7 +60,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
                         ||  $<operand><address> && %*M2O{$<name>}.grep(*.argtype eq 'A')
                         ||  $<operand><label> && %*M2O{$<name>}.grep(*.argtype eq 'O'|'A')
                         }>
-                    ||  { die "Failed to parse {$<name>}. Argument missing or wrong type." }
+                    ||  { X::ASM::MissingOrMistypedArgument.new(:mnemo($<name>)).throw }
                     ]
                 ||
                     $<name> = \w+ { X::ASM::UnknownMnemonic.new(:mnemo($<name>)).throw }
@@ -193,4 +198,3 @@ class ASM::H6809::Assembler # is ASM::Assembler
         self.second-pass(self.first-pass($input))
     }
 }
-

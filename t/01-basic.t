@@ -1,7 +1,7 @@
 use Test;
 use ASM::H6809::Assembler;
 
-plan 46;
+plan 48;
 
 ok 1, 'loading Module works.';
 
@@ -50,8 +50,10 @@ is $asm.first-pass("NOP\nLDA 50"), [0x12, 0xB6, 0, 50], 'more than one opcode wo
 is $asm.first-pass(".ORG \$2\nNOP"), [0d00, 0d00, 0x12], 'directive .ORG works';
 is $asm.first-pass("NOP\n.ORG 3\nLDA 1\n.ORG 1\nCOMA"), [0x12, 0x43, 0, 0xB6, 0, 1], '.ORG really works';
 
-# Unknown Opcode
+# Some error handling
 throws_like q[my $asm = ASM::H6809::Assembler.new; $asm.first-pass('HURR')], X::ASM::UnknownMnemonic;
+throws_like q[my $asm = ASM::H6809::Assembler.new; $asm.first-pass('LDA')], X::ASM::MissingOrMistypedArgument;
+throws_like q[my $asm = ASM::H6809::Assembler.new; $asm.first-pass('STX #1')], X::ASM::MissingOrMistypedArgument;
 
 # Opcodes with immediate dec value as operand
 is $asm.first-pass('LDA #123'), [ 0x86, 123 ], 'first-pass for <LDA> works.';
@@ -74,4 +76,3 @@ is $asm.first-pass(".ORG 2\nLOOP: BNE LOOP"), [ 0, 0, 0x26, 2 ], 'first-pass for
 is $asm.first-pass(".ORG 10\nZ1 .BYTE 1\n.ORG 0\nLDA #1\nSTA Z1"), [0x86, 1, 0xb7, 10, 0, 0, 0, 0, 0, 0, 0], 'labels work as addresses';
 #is $asm.first-pass('BEQ'), 0x27, 'first-pass for <BEQ> works.';
 #is $asm.first-pass('BRA'), 0x20, 'first-pass for <BRA> works.';
-
