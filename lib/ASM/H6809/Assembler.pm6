@@ -124,7 +124,8 @@ class ASM::H6809::Assembler # is ASM::Assembler
 
                 @!memory = map { $_ ?? $_.Int !! 0 }, @!memory;
 
-                make @.memory;
+                my $buf = Buf.new(|@.memory);
+                make $buf;
             }
 
             method label($/) {
