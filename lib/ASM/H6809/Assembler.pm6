@@ -53,9 +53,9 @@ class ASM::H6809::Assembler # is ASM::Assembler
                         <?{ %*M2O{$<name>}.elems == 1
                         && %*M2O{$<name>}[0].arglength == 0}>
                     ||
-                        ' '+? <operand> 
-                        <?{ 
-                            $<operand><addr-reg> && %*M2O{$<name>}.grep(*.argtype eq 'X') 
+                        ' '+? <operand>
+                        <?{
+                            $<operand><addr-reg> && %*M2O{$<name>}.grep(*.argtype eq 'X')
                         ||  $<operand><immediate-val> && %*M2O{$<name>}.grep(*.argtype eq 'I')
                         ||  $<operand><address> && %*M2O{$<name>}.grep(*.argtype eq 'A')
                         ||  $<operand><label> && %*M2O{$<name>}.grep(*.argtype eq 'O'|'A')
@@ -68,8 +68,8 @@ class ASM::H6809::Assembler # is ASM::Assembler
             }
 
             token operand {
-		[
-                    <addr-reg> 
+                [
+                    <addr-reg>
                 ||  <immediate-val>
                 ||  <address>
                 ||  <label>
@@ -112,14 +112,26 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     }
                 }
 
-                for @!memory <-> $cur {
-                    next unless $cur;
+                my $i = 0;
+                while $i <= @!memory {
+                    my $cur := @!memory[$i];
+                    unless $cur {
+                        $i++;
+                        next;
+                    }
                     for %.labels.pairs -> $pair {
                         if $pair.key && $cur eq $pair.key {
-                            $cur = $pair.value;
+                            if @!memory[1+$i] && @!memory[1+$i] eq $pair.key {
+                                my @parts = $pair.value.trans(" " => "0").comb(/../).map({ :16($^a) })>>.Int;
+                                @!memory[$i .. $i+1] = @parts.flat;
+                            }
+                            else {
+                                $cur = $pair.value.trans(" " => "0").comb(/../).map({ :16($^a) })>>.Int[1];
+                            }
                             last;
                         }
                     }
+                    $i++
                 }
 
                 @!memory = map { $_ ?? $_.Int !! 0 }, @!memory;
@@ -131,7 +143,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
             method label($/) {
                 my $label = $/.Str.trans(':' => '');
                 if $label ne any(@*MNEMOS) {
-                    %!labels{$label} //= $.position;
+                    %!labels{$label} //= $.position.fmt("%4x");
                     make $label
                 }
             }
@@ -150,12 +162,12 @@ class ASM::H6809::Assembler # is ASM::Assembler
             method opcode($/) {
                 my $argtype = $<operand><addr-reg> ?? 'X' !!
                               $<operand><immediate-val> ?? 'I' !!
-                              $<operand><address> ?? 'A' !! 
+                              $<operand><address> ?? 'A' !!
                               $<operand><label> ?? any('O', 'A') !! ' ';
-                my $argval = $<operand><addr-reg> //
-                             $<operand><immediate-val> //
-                             $<operand><address> // 
-                             $<operand><label> // ' ';
+                my $argval =  $<operand><addr-reg> //
+                              $<operand><immediate-val> //
+                              $<operand><address> //
+                              $<operand><label> // ' ';
 
                 my $opcode = %*M2O{$<name>}.grep(*.argtype eq $argtype)[0];
 
@@ -163,19 +175,23 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     # remove indicator for imidiate values, we already know from the opcode
                     $argval .= trans('#' => '');
 
-		    my $fmt = "%0" ~ ($opcode.arglength * 2) ~ "x";
+                    my $fmt = "%0" ~ ($opcode.arglength * 2) ~ "x";
+
                     # argval is a string, we have to pay attention what base it's notated in
-                    $argval = $argtype eq any('X', ' ') ?? $argval !! 
-                        $argval.substr(0, 1) eq '$' 
+                    $argval = $argtype eq any('X', ' ') ?? $argval !!
+                        $argval.substr(0, 1) eq '$'
                         ?? $argval.trans('$' => '').comb(/../).map({ :16( $^a ) })>>.Int
                         !! sprintf($fmt, $argval).comb(/../).map({ :16( $^a ) })>>.Int;
                 }
+
                 @.memory[$!position] = $opcode.hex;
                 $!position++;
 
-                my @next = ( $opcode.argtype ne any(' ', 'X') 
-                        ?? $argval
-                        !! Nil 
+                my @next = ( $argtype ne any(' ', 'X')
+                        ?? $argtype eq all('O', 'A') && $opcode.argtype ne 'O'
+                            ?? (~$argval, ~$argval)
+                            !! $argval
+                        !! Nil
                     ).flat;
 
                 for @next -> $elem {
@@ -191,11 +207,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
         ASMFirstPassGrammar.parse($input, :actions(ASMFirstPassAction.new)).ast;
     }
 
-    method second-pass(Str $input) {
-
-    }
-
     method assemble(Str $input) {
-        self.second-pass(self.first-pass($input))
+        self.first-pass($input)
     }
 }
