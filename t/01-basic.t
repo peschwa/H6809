@@ -1,7 +1,7 @@
 use Test;
 use ASM::H6809::Assembler;
 
-plan 49;
+plan 50;
 
 ok 1, 'loading Module works.';
 
@@ -81,3 +81,7 @@ ok $asm.assemble(".ORG 10\nZ1 .BYTE 1\n.ORG 0\nLDA #1\nSTA Z1") eq
 
 ok $cpu.compute($asm.assemble("Z1 .BYTE 1\nLDA #1\nSTA Z1")) eq Buf.new(0x01, 0x01, 0xb7, 0x00, 0x00), 
     'computing assembled object code works';
+
+ok $cpu.compute($asm.assemble("LDA #1\nCMPA #1\nBEQ JUMP\nSTA 0\nJUMP: STA 1")) 
+    eq Buf.new(0x01, 0x01, 0x81, 0x01, 0x27, 0x04, 0xb7, 0x00, 0x00, 0xb7, 0x00, 0x01),
+    'BEQ is assembled correctly';
