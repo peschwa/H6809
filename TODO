@@ -1,1 +1,5 @@
 - Labels currently can't be called the same as mnemonics, which isn't to spec (i assume. never read it)
+- Opcode semantics don't seem 100% consistent yet, but i don't know that much about the chip anyway
+- Implement something interactive, with stepping and inspecting and all that jazz
+- Write documentation
+- Implement synopsis-friendly methods/subs, tailored to "just assemble this" or somesuch
