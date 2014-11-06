@@ -79,4 +79,5 @@ ok $asm.assemble(".ORG 10\nZ1 .BYTE 1\n.ORG 0\nLDA #1\nSTA Z1") eq
 #is $asm.assemble('BEQ'), 0x27, 'assembling <BEQ> works.';
 #is $asm.assemble('BRA'), 0x20, 'assembling <BRA> works.';
 
-ok $cpu.compute($asm.assemble("Z1 .BYTE 1\nLDA #1\nSTA Z1")) eq Buf.new(0x01, 0x01, 0xb7, 0x00, 0x00), 'computing assembled object code works';
+ok $cpu.compute($asm.assemble("Z1 .BYTE 1\nLDA #1\nSTA Z1")) eq Buf.new(0x01, 0x01, 0xb7, 0x00, 0x00), 
+    'computing assembled object code works';

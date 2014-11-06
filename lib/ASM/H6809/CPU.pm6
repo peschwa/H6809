@@ -32,15 +32,20 @@ class ASM::H6809::CPU is ASM::CPU {
         @!opcodes.push: ASM::Opcode.new(:op({ $*acc -= 128 }), :mnemo('NEGA'), :hex(0x40), :arglength(0), :argtype(' '));
         @!opcodes.push: ASM::Opcode.new(:op({ $*acc /= 2 }), :mnemo('RORA'), :hex(0x46), :arglength(0), :argtype(' '));
         @!opcodes.push: ASM::Opcode.new(:op({ #`[[ TODO ]] }), :mnemo('RTS'), :hex(0x39), :arglength(0), :argtype(' '));
-        @!opcodes.push: ASM::Opcode.new(:op({ $*acc = @*objcode[toaddr(@*args[0], @*args[1])] }), 
+        @!opcodes.push: ASM::Opcode.new(:op({ $*acc = @*objcode[toaddr(|@*args)] }), 
             :mnemo('LDA'), :hex(0xB6), :arglength(2), :argtype('A'));
-        @!opcodes.push: ASM::Opcode.new(:op({ @*objcode[toaddr(@*args[0], @*args[1])] = $*acc }), 
+        @!opcodes.push: ASM::Opcode.new(:op({ @*objcode[toaddr(|@*args)] = $*acc }), 
             :mnemo('STA'), :hex(0xB7), :arglength(2), :argtype('A'));
-        @!opcodes.push: ASM::Opcode.new(:mnemo('ADDA'), :hex(0xBB), :arglength(2), :argtype('A'));
-        @!opcodes.push: ASM::Opcode.new(:mnemo('CMPA'), :hex(0xB1), :arglength(2), :argtype('A'));
-        @!opcodes.push: ASM::Opcode.new(:mnemo('ANDA'), :hex(0xB4), :arglength(2), :argtype('A'));
-        @!opcodes.push: ASM::Opcode.new(:mnemo('LDX'), :hex(0xBE), :arglength(2), :argtype('A'));
-        @!opcodes.push: ASM::Opcode.new(:mnemo('STX'), :hex(0xBF), :arglength(2), :argtype('A'));
+        @!opcodes.push: ASM::Opcode.new(:op({ $*accu += @*objcode[toaddr(|@*args)] }), 
+            :mnemo('ADDA'), :hex(0xBB), :arglength(2), :argtype('A'));
+        @!opcodes.push: ASM::Opcode.new(:op({ $*zflag = $*accu - @*objcode[toaddr(|@*args)] == 0 }),
+            :mnemo('CMPA'), :hex(0xB1), :arglength(2), :argtype('A'));
+        @!opcodes.push: ASM::Opcode.new(:op({ $*accu = ($*accu +& @*objcode[toaddr(|@*args)]) % 255 }),
+            :mnemo('ANDA'), :hex(0xB4), :arglength(2), :argtype('A'));
+        @!opcodes.push: ASM::Opcode.new(:op({ $*xreg = @*objcode[toaddr(|@*args)] }),
+            :mnemo('LDX'), :hex(0xBE), :arglength(2), :argtype('A'));
+        @!opcodes.push: ASM::Opcode.new(:op({ @*objcode[toaddr($*xreg.fmt("%4x").comb(/../))] = $*accu }),
+            :mnemo('STX'), :hex(0xBF), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(:mnemo('CMPX'), :hex(0xBC), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(:mnemo('ADDX'), :hex(0x31), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(:mnemo('JMP'), :hex(0x7E), :arglength(2), :argtype('A'));
@@ -62,7 +67,9 @@ class ASM::H6809::CPU is ASM::CPU {
 
     method compute(Buf $objcode) {
         my $pc = 0;
+        my $*zflag = False;
         my $*acc = 0;
+        my $*xreg = 0;
         my @*objcode := $objcode.list;
         while $pc < +@*objcode & 2 ** 8 - 1 {
             my $ophex = @*objcode[$pc];
