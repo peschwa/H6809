@@ -1,7 +1,7 @@
 use Test;
 use ASM::H6809::Assembler;
 
-plan 50;
+plan 51;
 
 ok 1, 'loading Module works.';
 
@@ -71,7 +71,7 @@ ok $asm.assemble('STA @X') eq Buf.new(0xA7), 'assembling <STA> works.';
 ok $asm.assemble('LDA @X') eq Buf.new(0xA6), 'assembling <LDA> works.';
 
 # Opcodes with offset as operand
-ok $asm.assemble(".ORG 2\nLOOP: BNE LOOP") eq Buf.new( 0, 0, 0x26, 2 ), 'assembling <BNE> works.';
+ok $asm.assemble(".ORG 2\nLOOP: BNE LOOP") eq Buf.new( 0, 0, 0x26, 0xFE ), 'assembling <BNE> works.';
 
 # Labels for variables
 ok $asm.assemble(".ORG 10\nZ1 .BYTE 1\n.ORG 0\nLDA #1\nSTA Z1") eq 
@@ -82,6 +82,11 @@ ok $asm.assemble(".ORG 10\nZ1 .BYTE 1\n.ORG 0\nLDA #1\nSTA Z1") eq
 ok $cpu.compute($asm.assemble("Z1 .BYTE 1\nLDA #1\nSTA Z1")) eq Buf.new(0x01, 0x01, 0xb7, 0x00, 0x00), 
     'computing assembled object code works';
 
-ok $cpu.compute($asm.assemble("LDA #1\nCMPA #1\nBEQ JUMP\nSTA 0\nJUMP: STA 1")) 
-    eq Buf.new(0x01, 0x01, 0x81, 0x01, 0x27, 0x04, 0xb7, 0x00, 0x00, 0xb7, 0x00, 0x01),
-    'BEQ is assembled correctly';
+ok $cpu.compute($asm.assemble("LDA #1\nCMPA #1\nBEQ JUMP\nSTA 0\nJUMP: STA 2"))
+    eq Buf.new(0x86, 0x01, 0x01, 0x01, 0x27, 0x03, 0xb7, 0x00, 0x00, 0xb7, 0x00, 0x02),
+    'BEQ is assembled and computed correctly';
+
+# same with a label
+ok $cpu.compute($asm.assemble("LDA #1\nZ1: CMPA #1\nBEQ JUMP\nSTA 0\nJUMP: STA Z1"))
+    eq Buf.new(0x86, 0x01, 0x01, 0x01, 0x27, 0x03, 0xb7, 0x00, 0x00, 0xb7, 0x00, 0x02),
+    'BEQ is assembled and computed correctly (with label)';

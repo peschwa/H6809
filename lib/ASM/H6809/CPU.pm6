@@ -135,7 +135,7 @@ class ASM::H6809::CPU is ASM::CPU {
         while $*pc < +@*objcode & 2 ** 8 - 1 {
             my $ophex = @*objcode[$*pc];
             my $opcode = @!opcodes.grep(*.hex == $ophex)[0];
-            my @*args = @*objcode[$*pc + 1 .. $opcode.arglength];
+            my @*args = @*objcode[$*pc + 1 .. $*pc + $opcode.arglength];
             $*pc += 1 + $opcode.arglength;
             $opcode.op()();
         }

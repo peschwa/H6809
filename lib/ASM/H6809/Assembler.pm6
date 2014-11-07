@@ -34,9 +34,9 @@ class ASM::H6809::Assembler # is ASM::Assembler
             token TOP {
                 [
                     [
-                        [ <label> ' '+ ]?
+                        [ <label('d')> ' '+ ]?
                         '.' <directive>
-                    ||  [ <label> ':' ' '+ ]?
+                    ||  [ <label('j')> ':' ' '+ ]?
                         <opcode>
                     ]
                 ]+ %% \x0A +?
@@ -72,7 +72,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     <addr-reg>
                 ||  <immediate-val>
                 ||  <address>
-                ||  <label>
+                ||  <label('x')>
                 ]
             }
 
@@ -91,8 +91,13 @@ class ASM::H6809::Assembler # is ASM::Assembler
                 ]
             }
 
-            token label {
-                \w+
+            token label($arg) {
+                \w+ 
+                [
+                    <?{ $arg eq 'd' }> $<d> = <?>
+                ||  <?{ $arg eq 'j' }> $<j> = <?>
+                ||  <?{ $arg eq 'x' }> <?>
+                ]
             }
 
         }
@@ -104,11 +109,13 @@ class ASM::H6809::Assembler # is ASM::Assembler
 
             method TOP($/) {
                 my $label;
-                if $<directive> && $<label> ne any(@*MNEMOS) {
-                    my $directive = make $<directive>>>.ast;
-                    $label = make $<label>>>.ast;
-                    if $directive && $label {
-                        %.labels{$label} //= $.position;
+                if $<label> ne any(@*MNEMOS) {
+                    if $<directive> {
+                        $label = make $<label>>>.ast;
+                        my $directive = make $<directive>>>.ast;
+                        if $directive && $label {
+                            %.labels{$label} //= $.position;
+                        }
                     }
                 }
 
@@ -130,6 +137,12 @@ class ASM::H6809::Assembler # is ASM::Assembler
                             }
                             last;
                         }
+                        elsif $pair.key && $cur eq ("O:" ~ $pair.key) {
+                            my $labelpos = $pair.value.subst(/O\:/, "").trans(" " => "0").comb(/../).map({ :16($^a) })>>.Int;
+                            $labelpos = $labelpos[0] +< 0x8 + $labelpos[1];
+                            my $pos = (($i max $labelpos) - $i);
+                            $cur = $pos <= 0 ?? $pos - 2 !! $pos - 1;
+                        }
                     }
                     $i++
                 }
@@ -141,16 +154,28 @@ class ASM::H6809::Assembler # is ASM::Assembler
             }
 
             method label($/) {
-                my $label = $/.Str.trans(':' => '');
-                if $label ne any(@*MNEMOS) {
-                    %!labels{$label} //= $.position.fmt("%4x");
+                if $/.Str ne any(@*MNEMOS) {
+                    my $label = $/.Str;
+                    if $<j> || $<d> {
+                        %!labels{$label} //= $.position.fmt("%4x");
+                    }
                     make $label
                 }
             }
 
             method directive($/) {
                 if $<name> eq 'ORG' {
-                    $!position = $<arg>.trans('$' => '').Int;
+                    if $<arg>.substr(0, 1) eq '$' {
+                        $!position = :16($<arg>.trans('$' => '')).Int;
+                    } 
+                    else {
+                        $!position = $<arg>.Int;
+                    }
+                    CATCH {
+                        when X::Str::Numeric {
+                            X::ASM::MissingOrMistypedArgument.new(:mnemo('.ORG'))
+                        }
+                    }
                     @!memory[$!position] = 0;
                     make '';
                 }
@@ -177,7 +202,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
 
                     my $fmt = "%0" ~ ($opcode.arglength * 2) ~ "x";
 
-                    # argval is a string, we have to pay attention what base it's notated in
+                    # we have to pay attention what base argval is notated in
                     $argval = $argtype eq any('X', ' ') ?? $argval !!
                         $argval.substr(0, 1) eq '$'
                         ?? $argval.trans('$' => '').comb(/../).map({ :16( $^a ) })>>.Int
@@ -187,12 +212,23 @@ class ASM::H6809::Assembler # is ASM::Assembler
                 @.memory[$!position] = $opcode.hex;
                 $!position++;
 
-                my @next = ( $argtype ne any(' ', 'X')
-                        ?? $argtype eq all('O', 'A') && $opcode.argtype ne 'O'
-                            ?? (~$argval, ~$argval)
-                            !! $argval
-                        !! Nil
-                    ).flat;
+                my @next; 
+                if $argtype ne any(' ', 'X') {
+                    if $argtype eq all('O', 'A') {
+                        if $opcode.arglength == 1 {
+                            @next = "O:" ~ $argval;
+                        }
+                        else {
+                            @next = ~$argval, ~$argval;
+                        }
+                    }
+                    else {
+                        @next = $argval.flat;
+                    }
+                }
+                else {
+                    @next = Nil
+                }
 
                 for @next -> $elem {
                     @.memory[$.position] = ~$elem;
