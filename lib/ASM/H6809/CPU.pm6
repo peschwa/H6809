@@ -6,12 +6,12 @@ class ASM::H6809::CPU {
     has @.opcode-types;
     has @.opcodes;
 
-    has $.pc is rw = 0;
-    has $.zflag is rw = 0;
-    has $.acc is rw = 0;
-    has $.xreg is rw = 0;
-    has $.sreg is rw = 0;
-    has @.objcode;
+    has $.pc is rw;
+    has $.zflag is rw;
+    has $.acc is rw;
+    has $.xreg is rw;
+    has $.sreg is rw;
+    has @.objcode is rw;
 
     method new {
         my $obj = self.CREATE;
@@ -40,6 +40,11 @@ class ASM::H6809::CPU {
         @!opcode-types.push: ' '; # no argument
 
         $!wordsize = 8;
+        $!pc = 0;
+        $!zflag = 0;
+        $!acc = 0;
+        $!xreg = 0;
+        $!sreg = 0;
 
         @!opcodes.push: ASM::Opcode.new(
             :op(-> $cpu, @args { }), 
@@ -93,16 +98,16 @@ class ASM::H6809::CPU {
             :op(-> $cpu, @args { #`[[ TODO ]] }),
             :mnemo('JSR'), :hex(0xBD), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.acc = $cpu.args[0] }), 
+            :op(-> $cpu, @args { $cpu.acc = @args[0] }), 
             :mnemo('LDA'), :hex(0x86), :arglength(1), :argtype('I'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.acc += $cpu.args[0] }),
+            :op(-> $cpu, @args { $cpu.acc += @args[0] }),
             :mnemo('ADDA'), :hex(0x8B), :arglength(1), :argtype('I'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.acc = ( $cpu.acc +& $cpu.args[0]) % 255 }),
+            :op(-> $cpu, @args { $cpu.acc = ( $cpu.acc +& @args[0]) % 255 }),
             :mnemo('ANDA'), :hex(0x84), :arglength(1), :argtype('I'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.zflag = ($cpu.acc - ($cpu.args[0] // 0)) == 0 }),
+            :op(-> $cpu, @args { $cpu.zflag = ($cpu.acc - (@args[0] // 0)) == 0 }),
             :mnemo('CMPA'), :hex(0x81), :arglength(1), :argtype('I'));
         @!opcodes.push: ASM::Opcode.new(
             :op(-> $cpu, @args { $cpu.xreg = $cpu.xreghexjoin($cpu.xreg) }),
@@ -123,26 +128,32 @@ class ASM::H6809::CPU {
             :op(-> $cpu, @args { $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] = $cpu.acc }),
             :mnemo('STA'), :hex(0xA7), :arglength(0), :argtype('X'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.pc += !$cpu.zflag ?? $cpu.args[0] !! 0 }),
+            :op(-> $cpu, @args { $cpu.pc += !$cpu.zflag ?? @args[0] !! 0 }),
             :mnemo('BNE'), :hex(0x26), :arglength(1), :argtype('O'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.pc += $cpu.zflag ?? $cpu.args[0] !! 0 }),
+            :op(-> $cpu, @args { $cpu.pc += $cpu.zflag ?? @args[0] !! 0 }),
             :mnemo('BEQ'), :hex(0x27), :arglength(1), :argtype('O'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.pc += $cpu.args[0] }),
+            :op(-> $cpu, @args { $cpu.pc += @args[0] }),
             :mnemo('BRA'), :hex(0x20), :arglength(1), :argtype('O'));
     }
 
     method compute(Buf $objcode) {
+        $!wordsize = 8;
+        $!pc = 0;
+        $!zflag = 0;
+        $!acc = 0;
+        $!xreg = 0;
+        $!sreg = 0;
+
         @!objcode = $objcode.list;
-        say @.objcode;
+
         while $.pc < +@.objcode & 2 ** 8 - 1 {
-            say $.pc;
             my $ophex = @.objcode[$.pc];
             my $opcode = @.opcodes.grep(*.hex == $ophex)[0];
             my @args = @.objcode[$.pc + 1 .. $.pc + $opcode.arglength];
             $!pc += 1 + $opcode.arglength;
-            #$opcode.op()(self, @args);
+            $opcode.op()(self, @args);
         }
         Buf.new(|@!objcode)
     }
