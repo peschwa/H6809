@@ -129,17 +129,16 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     for %.labels.pairs -> $pair {
                         if $pair.key && $cur eq $pair.key {
                             if @!memory[1+$i] && @!memory[1+$i] eq $pair.key {
-                                my @parts = $pair.value.trans(" " => "0").comb(/../).map({ :16($^a) })>>.Int;
+                                my @parts = :16($pair.value.substr(1,2)).Int, :16($pair.value.substr(3,2)).Int;
                                 @!memory[$i .. $i+1] = @parts.flat;
                             }
                             else {
-                                $cur = $pair.value.trans(" " => "0").comb(/../).map({ :16($^a) })>>.Int[1];
+                                $cur = :16($pair.value.substr(3)).Int;
                             }
                             last;
                         }
                         elsif $pair.key && $cur eq ("O:" ~ $pair.key) {
-                            my $labelpos = $pair.value.subst(/O\:/, "").trans(" " => "0").comb(/../).map({ :16($^a) })>>.Int;
-                            $labelpos = $labelpos[0] +< 0x8 + $labelpos[1];
+                            my $labelpos = :16($pair.value.substr(1,2)).Int +< 0x8 + :16($pair.value.substr(3,2)).Int;
                             my $pos = (($i max $labelpos) - $i);
                             $cur = $pos <= 0 ?? $pos - 2 !! $pos - 1;
                         }
@@ -157,7 +156,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
                 if $/.Str ne any(@*MNEMOS) {
                     my $label = $/.Str;
                     if $<j> || $<d> {
-                        %!labels{$label} //= $.position.fmt("%4x");
+                        %!labels{$label} //= $.position.fmt("%04x");
                     }
                     make $label
                 }
@@ -166,7 +165,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
             method directive($/) {
                 if $<name> eq 'ORG' {
                     if $<arg>.substr(0, 1) eq '$' {
-                        $!position = :16($<arg>.trans('$' => '')).Int;
+                        $!position = :16($<arg>.substr(1)).Int;
                     } 
                     else {
                         $!position = $<arg>.Int;
@@ -189,45 +188,59 @@ class ASM::H6809::Assembler # is ASM::Assembler
                               $<operand><immediate-val> ?? 'I' !!
                               $<operand><address> ?? 'A' !!
                               $<operand><label> ?? any('O', 'A') !! ' ';
-                my $argval =  $<operand><addr-reg> //
-                              $<operand><immediate-val> //
-                              $<operand><address> //
-                              $<operand><label> // ' ';
 
                 my $opcode = %*M2O{$<name>}.grep(*.argtype eq $argtype)[0];
-
-                if $argtype ne 'O' {
-                    # remove indicator for imidiate values, we already know from the opcode
-                    $argval .= trans('#' => '');
-
-                    my $fmt = "%0" ~ ($opcode.arglength * 2) ~ "x";
-
-                    # we have to pay attention what base argval is notated in
-                    $argval = $argtype eq any('X', ' ') ?? $argval !!
-                        $argval.substr(0, 1) eq '$'
-                        ?? $argval.trans('$' => '').comb(/../).map({ :16( $^a ) })>>.Int
-                        !! sprintf($fmt, $argval).comb(/../).map({ :16( $^a ) })>>.Int;
-                }
 
                 @.memory[$!position] = $opcode.hex;
                 $!position++;
 
                 my @next; 
-                if $argtype ne any(' ', 'X') {
-                    if $argtype eq all('O', 'A') {
-                        if $opcode.arglength == 1 {
-                            @next = "O:" ~ $argval;
-                        }
-                        else {
-                            @next = ~$argval, ~$argval;
-                        }
+                if $opcode.argtype eq ' ' || $argtype eq 'X' {
+                    @next = Nil
+                }
+                elsif $opcode.argtype eq 'O' && $opcode.arglength == 1  {
+                    if $<operand><label> {
+                        @next = "O:" ~ $<operand><label>;
                     }
-                    else {
-                        @next = $argval.flat;
+                    if $<operand><immediate-val> {
+                        my $argval = ~$<operand><immediate-val>.substr(1);
+                        @next = $argval.substr(0, 1) eq '$'
+                            ?? :16($argval.substr(1, 2))
+                            !! sprintf("%02x", $argval).Int;
+                    }
+                }
+                elsif $opcode.argtype eq 'O' && $opcode.arglength == 2 {
+                    if $<operand><label> {
+                        @next = ~$<operand><label>, ~$<operand><label>;
+                    }
+                    if $<operand><immediate-val> {
+                        my $argval = ~$<operand><immediate-val>.substr(1);
+                        @next = $argval.substr(0, 1) eq '$'
+                        ?? (:16($argval.substr(1, 2)), :16($argval.substr(3, 2)))
+                        !! sprintf("%04x", $argval).comb(/../).map({ :16( $^a ) })>>.Int;
                     }
                 }
                 else {
-                    @next = Nil
+                    if $<operand><label> {
+                        @next = ~$<operand><label>, ~$<operand><label>;
+                    }
+                    if $<operand><immediate-val> && $opcode.arglength == 1 {
+                        my $argval = ~$<operand><immediate-val>.substr(1);
+                        @next = $argval.substr(0, 1) eq '$'
+                        ?? :16($argval.substr(1, 2))
+                        !! $argval;
+                    }
+                    if $<operand><immediate-val> && $opcode.arglength == 2 {
+                        my $argval = ~$<operand><immediate-val>.substr(1);
+                        @next = $argval.substr(0, 1) eq '$'
+                        ?? (:16($argval.substr(1, 2)), :16($argval.substr(3,2)))
+                        !! sprintf("%04x", $argval).comb(/../).map({ :16($^a) })>>.Int;
+                    }
+                    if $<operand><address> {
+                        @next = $<operand><address>.substr(0, 1) eq '$'
+                        ?? (:16($<operand><address>.substr(1, 2)), :16($<operand><address>.substr(3, 2)))
+                        !! sprintf("%04x", $<operand><address>).comb(/../).map({ :16( $^a ) })>>.Int;
+                    }
                 }
 
                 for @next -> $elem {
