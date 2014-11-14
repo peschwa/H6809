@@ -203,10 +203,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
                         @next = "O:" ~ $<operand><label>;
                     }
                     if $<operand><immediate-val> {
-                        my $argval = ~$<operand><immediate-val>.substr(1);
-                        @next = $argval.substr(0, 1) eq '$'
-                            ?? :16($argval.substr(1, 2))
-                            !! sprintf("%02x", $argval).Int;
+                        @next = convert-address($<operand><immediate-val>, bytes => $opcode.arglength);
                     }
                 }
                 elsif $opcode.argtype eq 'O' && $opcode.arglength == 2 {
@@ -215,9 +212,7 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     }
                     if $<operand><immediate-val> {
                         my $argval = ~$<operand><immediate-val>.substr(1);
-                        @next = $argval.substr(0, 1) eq '$'
-                        ?? (:16($argval.substr(1, 2)), :16($argval.substr(3, 2)))
-                        !! sprintf("%04x", $argval).comb(/../).map({ :16( $^a ) })>>.Int;
+                        @next = convert-address($<operand><immediate-val>, bytes => $opcode.arglength);
                     }
                 }
                 else {
@@ -225,21 +220,13 @@ class ASM::H6809::Assembler # is ASM::Assembler
                         @next = ~$<operand><label>, ~$<operand><label>;
                     }
                     if $<operand><immediate-val> && $opcode.arglength == 1 {
-                        my $argval = ~$<operand><immediate-val>.substr(1);
-                        @next = $argval.substr(0, 1) eq '$'
-                        ?? :16($argval.substr(1, 2))
-                        !! $argval;
+                        @next = convert-address($<operand><immediate-val>, bytes => $opcode.arglength);
                     }
                     if $<operand><immediate-val> && $opcode.arglength == 2 {
-                        my $argval = ~$<operand><immediate-val>.substr(1);
-                        @next = $argval.substr(0, 1) eq '$'
-                        ?? (:16($argval.substr(1, 2)), :16($argval.substr(3,2)))
-                        !! sprintf("%04x", $argval).comb(/../).map({ :16($^a) })>>.Int;
+                        @next = convert-address($<operand><immediate-val>, bytes => $opcode.arglength);
                     }
                     if $<operand><address> {
-                        @next = $<operand><address>.substr(0, 1) eq '$'
-                        ?? (:16($<operand><address>.substr(1, 2)), :16($<operand><address>.substr(3, 2)))
-                        !! sprintf("%04x", $<operand><address>).comb(/../).map({ :16( $^a ) })>>.Int;
+                        @next = convert-address($<operand><address>, bytes => $opcode.arglength);
                     }
                 }
 
@@ -248,6 +235,35 @@ class ASM::H6809::Assembler # is ASM::Assembler
                     $!position++;
                 }
             }
+        }
+
+        sub convert-address($addr is copy, Int :$bytes! where { * == 1 || * == 2 }) {
+            my @ret;
+
+            # remove indicator for immediate value, the callsite knows
+            if $addr.substr(0, 1) eq '#' {
+                $addr .= substr(1);
+            }
+
+            my $is-hex = $addr.substr(0, 1) eq '$';
+
+            if $bytes == 2 {
+                if $is-hex {
+                    @ret = :16($addr.substr(1, 2)), :16($addr.substr(3, 2));
+                }
+                else {
+                    @ret = sprintf("%04x", $addr).comb(/../).map({ :16( $^a ) });
+                }
+            }
+            elsif $bytes == 1 {
+                if $is-hex {
+                    @ret = :16($addr.substr(1, 2));
+                }
+                else {
+                    @ret = :16(sprintf("%02x", $addr));
+                }
+            }
+            @ret[0 .. $bytes];
         }
 
         my %*M2O = %!mnemo-to-opcode;
