@@ -1,7 +1,7 @@
 use Test;
 use ASM::H6809::Assembler;
 
-plan 51;
+plan 52;
 
 ok 1, 'loading Module works.';
 
@@ -90,3 +90,6 @@ ok $cpu.compute($asm.assemble("LDA #1\nCMPA #1\nBEQ JUMP\nSTA 0\nJUMP: STA 2"))
 ok $cpu.compute($asm.assemble("LDA #1\nZ1: CMPA #1\nBEQ JUMP\nSTA 0\nJUMP: STA Z1"))
     eq Buf.new(0x86, 0x01, 0x01, 0x01, 0x27, 0x03, 0xb7, 0x00, 0x00, 0xb7, 0x00, 0x02),
     'BEQ is assembled and computed correctly (with label)';
+
+note "hopefully the next one doesn't infini-loop.";
+ok $cpu.compute($asm.assemble("LDA #1\nZ1: ADDA #1\nCMPA #4\nBNE Z1\n"));

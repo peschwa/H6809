@@ -139,8 +139,8 @@ class ASM::H6809::Assembler # is ASM::Assembler
                         }
                         elsif $pair.key && $cur eq ("O:" ~ $pair.key) {
                             my $labelpos = :16($pair.value.substr(1,2)).Int +< 0x8 + :16($pair.value.substr(3,2)).Int;
-                            my $pos = (($i max $labelpos) - $i);
-                            $cur = $pos <= 0 ?? $pos - 2 !! $pos - 1;
+                            my $pos = ($labelpos - $i);
+                            $cur = $pos <= 0 ?? $pos - 1 !! $pos - 1;
                         }
                     }
                     $i++

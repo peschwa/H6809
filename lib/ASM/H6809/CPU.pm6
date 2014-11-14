@@ -86,10 +86,12 @@ class ASM::H6809::CPU {
             :op(-> $cpu, @args { $cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] = $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] }),
             :mnemo('STX'), :hex(0xBF), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.zflag = ($cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] - $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)]) == 0 }),
+            :op(-> $cpu, @args { $cpu.zflag = ($cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] 
+                - $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)]) == 0 }),
             :mnemo('CMPX'), :hex(0xBC), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] += $cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] }), 
+            :op(-> $cpu, @args { $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] 
+                += $cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] }), 
             :mnemo('ADDX'), :hex(0x31), :arglength(2), :argtype('A'));
         @!opcodes.push: ASM::Opcode.new(
             :op(-> $cpu, @args { $cpu.pc = $cpu.argshexjoin(@args[0], @args[1]) }),
@@ -113,7 +115,8 @@ class ASM::H6809::CPU {
             :op(-> $cpu, @args { $cpu.xreg = $cpu.xreghexjoin($cpu.xreg) }),
             :mnemo('LDX'), :hex(0x8E), :arglength(2), :argtype('I'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.zflag = $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] - $cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] == 0}),
+            :op(-> $cpu, @args { $cpu.zflag = $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] 
+                - $cpu.objcode[$cpu.argshexjoin(@args[0], @args[1])] }),
             :mnemo('CMPX'), :hex(0x8c), :arglength(2), :argtype('I'));
         @!opcodes.push: ASM::Opcode.new(
             :op(-> $cpu, @args { $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] += $cpu.argshexjoin(@args[0], @args[1]) }),
@@ -128,17 +131,28 @@ class ASM::H6809::CPU {
             :op(-> $cpu, @args { $cpu.objcode[$cpu.xreghexjoin($cpu.xreg)] = $cpu.acc }),
             :mnemo('STA'), :hex(0xA7), :arglength(0), :argtype('X'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.pc += !$cpu.zflag ?? @args[0] !! 0 }),
+            :op(-> $cpu, @args { $cpu.pc += !$cpu.zflag ?? ( @args[0] > 127 ?? @args[0] - 256 !! @args[0] ) !! 0 }),
             :mnemo('BNE'), :hex(0x26), :arglength(1), :argtype('O'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.pc += $cpu.zflag ?? @args[0] !! 0 }),
+            :op(-> $cpu, @args { $cpu.pc += $cpu.zflag ?? ( @args[0] > 127 ?? @args[0] - 256 !! @args[0] ) !! 0 }),
             :mnemo('BEQ'), :hex(0x27), :arglength(1), :argtype('O'));
         @!opcodes.push: ASM::Opcode.new(
-            :op(-> $cpu, @args { $cpu.pc += @args[0] }),
+            :op(-> $cpu, @args { $cpu.pc += ( @args[0] > 127 ?? @args[0] - 256 !! @args[0] ) }),
             :mnemo('BRA'), :hex(0x20), :arglength(1), :argtype('O'));
     }
 
     method compute(Buf $objcode) {
+        $.init($objcode);
+
+        say $.gist;
+        while $.pc < +@.objcode & 2 ** 8 - 1 {
+            $.step;
+            say $.gist;
+        }
+        Buf.new(|@!objcode)
+    }
+
+    method init(Buf $objcode) {
         $!wordsize = 8;
         $!pc = 0;
         $!zflag = 0;
@@ -147,14 +161,17 @@ class ASM::H6809::CPU {
         $!sreg = 0;
 
         @!objcode = $objcode.list;
+    }
 
-        while $.pc < +@.objcode & 2 ** 8 - 1 {
-            my $ophex = @.objcode[$.pc];
-            my $opcode = @.opcodes.grep(*.hex == $ophex)[0];
-            my @args = @.objcode[$.pc + 1 .. $.pc + $opcode.arglength];
-            $!pc += 1 + $opcode.arglength;
-            $opcode.op()(self, @args);
-        }
-        Buf.new(|@!objcode)
+    method step {
+        my $ophex = @.objcode[$.pc];
+        my $opcode = @.opcodes.grep(*.hex == $ophex)[0];
+        my @args = @.objcode[$.pc + 1 .. $.pc + $opcode.arglength];
+        $!pc += 1 + $opcode.arglength;
+        $opcode.op()(self, @args);
+    }
+
+    method gist() {
+        "PC: $.pc\tZ: $.zflag\tA: $.acc\tX: $.xreg\tS: $.sreg"
     }
 }
